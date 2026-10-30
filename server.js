@@ -8,9 +8,10 @@
 //   client -> server  {t:'host'}                 open a new room; reply {t:'room',code,id,seq,peers:[]}
 //                     {t:'join',code:'KQ7M'}     join; reply {t:'room',...} or {t:'err',e:'full'|'nosuch'|'bad'}
 //                     {t:'p',p:{...}}            my latest state (max 4 KB, max ~30 per second)
+//                     {t:'b',d:{...}}            broadcast to the room, not stored (world snapshots, events)
 //                     {t:'ka'}                   keep-alive
 //                     {t:'leave'}                leave the room
-//   server -> client  {t:'join',id,seq,p}  {t:'p',id,p}  {t:'leave',id}
+//   server -> client  {t:'join',id,seq,p}  {t:'p',id,p}  {t:'b',id,d}  {t:'leave',id}
 //
 // Run:  PORT=8080 node server.js        Health check: GET /health  ->  {"ok":true,"rooms":n,"players":n}
 'use strict';
@@ -20,7 +21,7 @@ const crypto = require('crypto');
 const PORT = +process.env.PORT || 8080;
 const MAX_PLAYERS = 4;
 const MAX_ROOMS = +process.env.MAX_ROOMS || 5000;
-const MAX_MSG = 6 * 1024;
+const MAX_MSG = 32 * 1024;           // world snapshots from the host can be a few KB
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 // Optional: comma-separated list of allowed page origins (e.g. https://www.crazygames.com). Empty = allow all.
 const ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -105,9 +106,18 @@ function onMessage(c, text) {
     if (!c.room || typeof m.p !== 'object' || m.p === null) return;
     const now = Date.now();                         // simple rate limit: ~30 updates a second per player
     if (now - c.win > 1000) { c.win = now; c.n = 0; }
-    if (++c.n > 30) return;
+    if (++c.n > 40) return;
     c.p = m.p;
     const msg = JSON.stringify({ t: 'p', id: c.id, p: m.p });
+    for (const o of c.room.members.values()) if (o !== c) send(o, msg);
+    return;
+  }
+  if (m.t === 'b') {
+    if (!c.room || typeof m.d !== 'object' || m.d === null) return;
+    const now = Date.now();
+    if (now - (c.winB || 0) > 1000) { c.winB = now; c.nb = 0; }
+    if (++c.nb > 40) return;
+    const msg = JSON.stringify({ t: 'b', id: c.id, d: m.d });
     for (const o of c.room.members.values()) if (o !== c) send(o, msg);
     return;
   }
