@@ -160,8 +160,16 @@ server.on('upgrade', (req, socket) => {
       if (op === 0x8) { try { socket.write(frame(0x8, Buffer.alloc(0))); } catch (e) {} return drop(c); }
       if (op === 0x9) { try { socket.write(frame(0xA, data)); } catch (e) {} continue; }
       if (op === 0xA) continue;
-      if (op === 0x1 && (b0 & 0x80)) onMessage(c, data.toString('utf8'));
-      // fragmented and binary messages are not used by the game and are ignored
+      // text messages may arrive split into fragments (Render's proxy splits larger ones), so put them back together
+      const fin = b0 & 0x80;
+      if (op === 0x1) { if (fin) onMessage(c, data.toString('utf8')); else c.frag = [data]; continue; }
+      if (op === 0x0 && c.frag) {
+        c.frag.push(data);
+        if (c.frag.reduce((n, b) => n + b.length, 0) > MAX_MSG) { c.frag = null; return drop(c); }
+        if (fin) { const all = Buffer.concat(c.frag); c.frag = null; onMessage(c, all.toString('utf8')); }
+        continue;
+      }
+      // binary messages are not used by the game and are ignored
     }
   });
   socket.on('close', () => drop(c));
