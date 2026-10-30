@@ -1,0 +1,10 @@
+{
+  "name": "gridlock-city-relay",
+  "version": "1.0.0",
+  "description": "Room-code WebSocket relay for Gridlock City multiplayer (up to 4 players per room). No dependencies.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED",
+  "private": true
+}
